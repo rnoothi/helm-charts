@@ -4,6 +4,11 @@ metadata:
   name: {{ include "nrKubernetesOtel.deployment.configMap.fullname" . }}
   namespace: {{ .Release.Namespace }}
 data:
+  gateway-config.yaml: |
+    reserved_melt_attributes:
+      Metric:
+        - interval.ms
+        - metricName
   deployment-config.yaml: |
     {{- with include "nrKubernetesOtel.deployment.configMap.config" . }}
     {{- . | nindent 4 }}
@@ -103,7 +108,7 @@ data:
           exporters: [nrcollectorexporter]
         metrics/otlp:
           receivers: [otlp]
-          processors: [ nrprocessor]
+          processors: [nrprocessor]
           exporters: [otlphttp]
         traces/otlp:
           receivers: [otlp]
@@ -113,23 +118,21 @@ data:
           receivers: [ nrproprietaryreceiver ]
           processors: [ nrprocessor ]
           exporters: [ nrcollectorexporter ]
-
         metrics:
           receivers: [prometheus]
           processors: [cumulativetodelta]
           exporters: [otlphttp]
 
-
-      telemetry:
-      {{- if include "newrelic.common.verboseLog" . }}
+    telemetry:
+        {{- if include "newrelic.common.verboseLog" . }}
         logs:
           level: "debug"
-      {{- end }}
+        {{- end }}
+        {{- if include "nrKubernetesOtel.lowDataMode" . }}
+        metrics:
+          level: info
+        {{- else}}}
         metrics:
           level: detailed
-
-  gateway-config.yaml: |
-    reserved_melt_attributes:
-      Metric:
-        - interval.ms
-        - metricName
+        {{- end }}
+    {{- end }}
