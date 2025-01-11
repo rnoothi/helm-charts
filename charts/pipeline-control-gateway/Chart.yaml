@@ -1,0 +1,24 @@
+apiVersion: v2
+name: pipeline-control-gateway
+description: A Helm chart to NewRelic deploy pipeline control gateway.
+
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: common-library
+    version: 1.1.1
+    repository: "https://helm-charts.newrelic.com"
+
+appVersion: "0.1.0"
+
+maintainers:
+  - name: rnoothi
+    url: https://github.com/rnoothi
+
+keywords:
+  - infrastructure
+  - newrelic
+  - monitoring
+  - opentelemetry
+  - kubernetes

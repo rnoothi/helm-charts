@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nrKubernetesOtel.deployment.configMap.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+data:
+  deployment-config.yaml: |
+    {{- with include "nrKubernetesOtel.deployment.configMap.config" . }}
+    {{- . | nindent 4 }}
+    {{- else }}
+    extensions:
+      zpages:
+      healthcheckv2:
+        use_v2: true
+        component_health:
+          include_permanent_errors: false
+          include_recoverable_errors: true
+          recovery_duration: 5m
+        http:
+          endpoint: "0.0.0.0:13133"
+          status:
+            enabled: true
+            path: "/health/status"
+          config:
+            enabled: true
+            path: "/health/config"
+
+    receivers:
+      nrproprietaryreceiver:
+        NrHost: "staging-collector.newrelic.com"
+        server:
+          endpoint: ${env:MY_POD_IP}:80
+        client:
+          compression: gzip
+      otlp:
+        protocols:
+          http:
+            endpoint: ${env:MY_POD_IP}:4318
+          grpc:
+            endpoint: ${env:MY_POD_IP}:4317
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: 'pipeline-control-gateway'
+              scrape_interval: 10s
+              static_configs:
+                - targets: [ '0.0.0.0:8888' ]
+
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 100
+      nrprocessor:
+        queries:
+          {{- range $value := .Values.processors.nrprocessor.queries }}
+          - query:
+              name: {{ $value.query.name | quote }}
+              value: {{ $value.query.value | quote }}
+              category: {{ $value.query.category | quote }}
+          {{- end }}
+      cumulativetodelta:
+
+    exporters:
+      debug:
+        verbosity: detailed
+      otlp:
+        endpoint: {{ include "nrKubernetesOtel.grpc.endpoint" . }}
+        headers:
+          api-key: ${env:NEW_RELIC_LICENSE_KEY}
+      otlphttp:
+        endpoint: {{ include "nrKubernetesOtel.endpoint" . }}
+        headers:
+          api-key: ${env:NEW_RELIC_LICENSE_KEY}
+      nrcollectorexporter:
+        endpoint: https://staging-log-api.newrelic.com
+        sending_queue:
+          enabled: false
+        compression: gzip
+        encoding: json
+        event_api_endpoint: https://staging-insights-collector.newrelic.com
+        log_api_endpoint: https://staging-log-api.newrelic.com
+        metrics_endpoint: https://staging-metric-api.newrelic.com
+        infra_event_api_endpoint: https://staging-infra-api.newrelic.com
+        traces_endpoint: https://staging-trace-api.newrelic.com
+        nr_license_key: ${env:NEW_RELIC_LICENSE_KEY}
+
+    service:
+      extensions: [ healthcheckv2 ]
+
+      pipelines:
+        logs/nr:
+          receivers: [nrproprietaryreceiver]
+          processors: [nrprocessor]
+          exporters: [nrcollectorexporter]
+        logs/otlp:
+          receivers: [ otlp ]
+          processors: [ nrprocessor ]
+          exporters: [ otlphttp ]
+        metrics/nr:
+          receivers: [nrproprietaryreceiver]
+          processors: [nrprocessor]
+          exporters: [nrcollectorexporter]
+        metrics/otlp:
+          receivers: [otlp]
+          processors: [ nrprocessor]
+          exporters: [otlphttp]
+        traces/otlp:
+          receivers: [otlp]
+          processors: [nrprocessor]
+          exporters: [ otlphttp ]
+        traces/nr:
+          receivers: [ nrproprietaryreceiver ]
+          processors: [ nrprocessor ]
+          exporters: [ nrcollectorexporter ]
+
+        metrics:
+          receivers: [prometheus]
+          processors: [cumulativetodelta]
+          exporters: [otlphttp]
+
+
+      telemetry:
+      {{- if include "newrelic.common.verboseLog" . }}
+        logs:
+          level: "debug"
+      {{- end }}
+        metrics:
+          level: detailed
+
+  gateway-config.yaml: |
+    reserved_melt_attributes:
+      Metric:
+        - interval.ms
+        - metricName
